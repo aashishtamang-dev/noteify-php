@@ -448,7 +448,17 @@ async function loadNotesManagement() {
             const status = note.status || 'approved'; // Default to approved if no status field
             const statusClass = status === 'approved' ? 'status-approved' : (status === 'rejected' ? 'status-rejected' : 'status-pending');
             const statusText = status.charAt(0).toUpperCase() + status.slice(1);
-            
+
+            // Build a safe file path (some rows may not have uploads/ prefix)
+            let filePath = null;
+            if (note.file_path) {
+                filePath = note.file_path.startsWith('uploads/')
+                    ? note.file_path
+                    : `uploads/${note.file_path}`;
+            }
+
+            const safeFilePath = filePath ? filePath.replace(/'/g, "\\'") : null;
+
             return `
             <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1fr 1.5fr;">
                 <div>
@@ -461,7 +471,12 @@ async function loadNotesManagement() {
                 <div>${note.views || 0}</div>
                 <div>${note.downloads || 0}</div>
                 <div><span class="status-badge ${statusClass}">${statusText}</span></div>
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; justify-content: flex-start;">
+                    ${safeFilePath ? `
+                        <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" onclick="window.open('../../${safeFilePath}', '_blank')" title="View note">
+                            <i class="fa-regular fa-eye"></i> View
+                        </button>
+                    ` : ''}
                     ${status !== 'approved' ? `
                         <button class="btn-approve" onclick="approveNote(${note.note_id})" title="Approve Note">
                             <i class="fa-solid fa-check"></i> Approve
