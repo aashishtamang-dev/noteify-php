@@ -250,6 +250,38 @@
                     </button>
                 </div>
 
+                <div class="notes-filters">
+                    <div class="notes-filters-left">
+                        <input
+                            type="search"
+                            id="dashboard-search-input"
+                            class="form-input"
+                            placeholder="Search by title, course, or uploader..."
+                        >
+                    </div>
+                    <div class="notes-filters-right">
+                        <select id="dashboard-filter-status" class="form-input">
+                            <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <select id="dashboard-filter-course" class="form-input">
+                            <option value="">All courses</option>
+                        </select>
+                        <select id="dashboard-filter-uploader" class="form-input">
+                            <option value="">All uploaders</option>
+                        </select>
+                        <select id="dashboard-filter-type" class="form-input">
+                            <option value="">All types</option>
+                            <option value="notes">Notes</option>
+                            <option value="assignment">Assignments</option>
+                            <option value="paper">Papers</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
                 <!-- Statistics Cards -->
                 <div class="admin-stats">
                     <div class="stat-card">

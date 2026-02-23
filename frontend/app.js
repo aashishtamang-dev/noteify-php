@@ -298,6 +298,27 @@ function loadViewMode() {
     }
 }
 
+// Fire-and-forget stats tracker for note views/downloads
+window.trackNoteStat = function(noteId, action) {
+    if (!noteId || !action) return true;
+    try {
+        fetch('../backend/api/note_stats.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                note_id: noteId,
+                action: action
+            })
+        }).catch(() => {});
+    } catch (e) {
+        console.error('Failed to track note stat', e);
+    }
+    // Always allow navigation to continue
+    return true;
+};
+
 // Resources
 function renderResources() {
     const courseFilterEl = document.getElementById('course-filter');
@@ -336,7 +357,7 @@ function renderResources() {
             const fileUrl = resource.file_path
                 ? `../${resource.file_path.replace(/^\/+/, '')}`
                 : null;
-            
+
             return `
             <div class="resource-list-item" style="display: flex; align-items: center; gap: 1rem; padding: 1rem; border-bottom: 1px solid var(--border-color);">
                 <div style="flex: 1;">
@@ -355,10 +376,12 @@ function renderResources() {
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
                     ${fileUrl ? `
-                        <a class="btn btn-secondary" href="${fileUrl}" target="_blank" style="padding: 0.5rem 1rem;">
+                        <a class="btn btn-secondary" href="${fileUrl}" target="_blank" style="padding: 0.5rem 1rem;"
+                           onclick="return window.trackNoteStat(${resource.id}, 'view')">
                             <i class="fa-regular fa-eye"></i> View
                         </a>
-                        <a class="btn btn-primary" href="${fileUrl}" download style="padding: 0.5rem 1rem;">
+                        <a class="btn btn-primary" href="${fileUrl}" download style="padding: 0.5rem 1rem;"
+                           onclick="return window.trackNoteStat(${resource.id}, 'download')">
                             <i class="fa-solid fa-download"></i> Download
                         </a>
                     ` : `
@@ -372,7 +395,6 @@ function renderResources() {
     } else {
         // Card view (default)
     container.innerHTML = filtered.map(resource => {
-        // Build a simple relative URL from frontend/ to uploads/
         const fileUrl = resource.file_path
             ? `../${resource.file_path.replace(/^\/+/, '')}`
             : null;
@@ -395,10 +417,12 @@ function renderResources() {
                     ${
                         fileUrl
                             ? `
-                    <a class="btn btn-secondary" href="${fileUrl}" target="_blank">
+                    <a class="btn btn-secondary" href="${fileUrl}" target="_blank"
+                       onclick="return window.trackNoteStat(${resource.id}, 'view')">
                         <i class="fa-regular fa-eye"></i> View
                     </a>
-                    <a class="btn btn-primary" href="${fileUrl}" download>
+                    <a class="btn btn-primary" href="${fileUrl}" download
+                       onclick="return window.trackNoteStat(${resource.id}, 'download')">
                         <i class="fa-solid fa-download"></i> Download
                     </a>`
                             : `
@@ -441,7 +465,7 @@ function getTypeLabel(type) {
     return labels[type] || type;
 }
 
-function viewResource(id) {
+window.viewResource = async function(id) {
     const resource = resources.find(r => r.id === id);
     if (!resource) return;
 
@@ -450,16 +474,46 @@ function viewResource(id) {
         return;
     }
 
-    // Build absolute URL: http://localhost/noteify/uploads/...
+    // Fire-and-forget stats update (view)
+    try {
+        fetch('../backend/api/note_stats.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                note_id: resource.id,
+                action: 'view'
+            })
+        }).then(res => res.json().catch(() => null)).then(data => {
+            if (data && data.success) {
+                // Update local counters so UI feels live
+                resources = resources.map(r =>
+                    r.id === resource.id
+                        ? {
+                            ...r,
+                            views: data.views !== undefined ? data.views : (r.views || 0) + 1
+                        }
+                        : r
+                );
+                renderResources();
+                renderUserContributions();
+            }
+        }).catch(() => {});
+    } catch (e) {
+        console.error('Failed to update view counter', e);
+    }
+
+    // Build URL relative to frontend/ (Homepage.html)
     const fileUrl = resource.file_path.startsWith('http')
         ? resource.file_path
-        : window.location.origin + '/noteify/' + resource.file_path.replace(/^\/+/, '');
+        : '../' + resource.file_path.replace(/^\/+/, '');
 
-    // Open in same tab (more reliable than window.open for exam/demo)
+    // Open in same tab (browser will handle view/download)
     window.location.href = fileUrl;
-}
+};
 
-function downloadResource(id) {
+window.downloadResource = async function(id) {
     const resource = resources.find(r => r.id === id);
     if (!resource) return;
 
@@ -468,13 +522,42 @@ function downloadResource(id) {
         return;
     }
 
+    // Fire-and-forget stats update (download)
+    try {
+        fetch('../backend/api/note_stats.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                note_id: resource.id,
+                action: 'download'
+            })
+        }).then(res => res.json().catch(() => null)).then(data => {
+            if (data && data.success) {
+                resources = resources.map(r =>
+                    r.id === resource.id
+                        ? {
+                            ...r,
+                            downloads: data.downloads !== undefined ? data.downloads : (r.downloads || 0) + 1
+                        }
+                        : r
+                );
+                renderResources();
+                renderUserContributions();
+            }
+        }).catch(() => {});
+    } catch (e) {
+        console.error('Failed to update download counter', e);
+    }
+
     const fileUrl = resource.file_path.startsWith('http')
         ? resource.file_path
-        : window.location.origin + '/noteify/' + resource.file_path.replace(/^\/+/, '');
+        : '../' + resource.file_path.replace(/^\/+/, '');
 
     // Simple navigation to file (browser will either open or download)
     window.location.href = fileUrl;
-}
+};
 
 // Upload
 function closeUploadModal() {

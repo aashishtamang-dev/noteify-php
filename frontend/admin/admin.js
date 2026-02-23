@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadProfile();
     initializeProfile();
     initializeNotesManagementControls();
+    initializeDashboardFilters();
 });
 
 // Navigation
@@ -47,7 +48,6 @@ function switchPage(page) {
     
     // Load page-specific data
     if (page === 'dashboard') {
-        loadRecentUploads();
         loadStats();
     } else if (page === 'users') {
         loadUsers();
@@ -62,49 +62,230 @@ function switchPage(page) {
 }
 
 // Dashboard Functions
-async function loadRecentUploads() {
-    try {
-        const response = await fetch('../../backend/api/admin/notes.php');
-        const notes = await response.json();
-        
-        // Get only recent 10 uploads
-        const recentNotes = notes.slice(0, 10);
-        
-        const container = document.getElementById('recent-uploads-container');
-        
-        if (!container) return;
-        
-        if (recentNotes.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-inbox"></i><br>No recent uploads</div>';
-            return;
-        }
-        
-        container.innerHTML = recentNotes.map(note => {
-            const date = new Date(note.created_at);
-            const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            
-            return `
-            <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1fr;">
-                <div>
-                    <strong>${note.title || 'Untitled'}</strong>
-                    ${note.description ? `<br><small style="color: var(--text-secondary);">${note.description.substring(0, 50)}...</small>` : ''}
-                </div>
-                <div>${note.author_name || 'Unknown'}</div>
-                <div>${note.course || '-'}</div>
-                <div><span class="resource-type ${note.type || 'notes'}">${note.type || 'notes'}</span></div>
-                <div>${note.views || 0}</div>
-                <div>${note.downloads || 0}</div>
-                <div><small>${formattedDate}</small></div>
-            </div>
-            `;
-        }).join('');
-    } catch (error) {
-        console.error('Error loading recent uploads:', error);
-        const container = document.getElementById('recent-uploads-container');
-        if (container) {
-            container.innerHTML = '<div class="empty-state">Error loading recent uploads. Please refresh.</div>';
+let dashboardNotesData = [];
+let dashboardNotesFilters = {
+    status: '',
+    course: '',
+    uploader: '',
+    type: '',
+    search: ''
+};
+
+function initializeDashboardFilters() {
+    const searchInput = document.getElementById('dashboard-search-input');
+    const statusSelect = document.getElementById('dashboard-filter-status');
+    const courseSelect = document.getElementById('dashboard-filter-course');
+    const uploaderSelect = document.getElementById('dashboard-filter-uploader');
+    const typeSelect = document.getElementById('dashboard-filter-type');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            dashboardNotesFilters.search = e.target.value || '';
+            renderDashboardStatsAndUploads();
+        });
+    }
+
+    if (statusSelect) {
+        statusSelect.addEventListener('change', (e) => {
+            dashboardNotesFilters.status = e.target.value || '';
+            renderDashboardStatsAndUploads();
+        });
+    }
+
+    if (courseSelect) {
+        courseSelect.addEventListener('change', (e) => {
+            dashboardNotesFilters.course = e.target.value || '';
+            renderDashboardStatsAndUploads();
+        });
+    }
+
+    if (uploaderSelect) {
+        uploaderSelect.addEventListener('change', (e) => {
+            dashboardNotesFilters.uploader = e.target.value || '';
+            renderDashboardStatsAndUploads();
+        });
+    }
+
+    if (typeSelect) {
+        typeSelect.addEventListener('change', (e) => {
+            dashboardNotesFilters.type = e.target.value || '';
+            renderDashboardStatsAndUploads();
+        });
+    }
+}
+
+function populateDashboardFilterOptions() {
+    const courseSelect = document.getElementById('dashboard-filter-course');
+    const uploaderSelect = document.getElementById('dashboard-filter-uploader');
+    const typeSelect = document.getElementById('dashboard-filter-type');
+
+    if (!Array.isArray(dashboardNotesData) || dashboardNotesData.length === 0) {
+        return;
+    }
+
+    if (courseSelect) {
+        const previous = courseSelect.value;
+        const courses = new Set();
+        dashboardNotesData.forEach(note => {
+            if (note.course) {
+                courses.add(note.course);
+            }
+        });
+        courseSelect.innerHTML = '<option value="">All courses</option>' +
+            Array.from(courses).sort().map(course =>
+                `<option value="${course}">${course}</option>`
+            ).join('');
+        if (previous && Array.from(courses).includes(previous)) {
+            courseSelect.value = previous;
         }
     }
+
+    if (uploaderSelect) {
+        const previous = uploaderSelect.value;
+        const uploaders = new Set();
+        dashboardNotesData.forEach(note => {
+            const uploader = getNoteUploaderDisplay(note);
+            if (uploader) {
+                uploaders.add(uploader);
+            }
+        });
+        uploaderSelect.innerHTML = '<option value="">All uploaders</option>' +
+            Array.from(uploaders).sort().map(uploader =>
+                `<option value="${uploader}">${uploader}</option>`
+            ).join('');
+        if (previous && Array.from(uploaders).includes(previous)) {
+            uploaderSelect.value = previous;
+        }
+    }
+
+    if (typeSelect) {
+        const previous = typeSelect.value;
+        const types = new Set();
+        dashboardNotesData.forEach(note => {
+            if (note.type) {
+                types.add(note.type);
+            }
+        });
+        // Keep base options but add any custom types
+        const baseOptions = [
+            { value: '', label: 'All types' },
+            { value: 'notes', label: 'Notes' },
+            { value: 'assignment', label: 'Assignments' },
+            { value: 'paper', label: 'Papers' },
+            { value: 'other', label: 'Other' }
+        ];
+        const extraTypes = Array.from(types).filter(t => !baseOptions.some(b => b.value === t && t !== ''));
+        typeSelect.innerHTML = baseOptions.map(opt =>
+            `<option value="${opt.value}">${opt.label}</option>`
+        ).join('') + extraTypes.map(t =>
+            `<option value="${t}">${t}</option>`
+        ).join('');
+        if (previous) {
+            typeSelect.value = previous;
+        }
+    }
+}
+
+function getFilteredDashboardNotes() {
+    if (!Array.isArray(dashboardNotesData) || dashboardNotesData.length === 0) {
+        return [];
+    }
+
+    let filtered = dashboardNotesData.slice();
+
+    if (dashboardNotesFilters.status) {
+        const statusFilter = dashboardNotesFilters.status;
+        filtered = filtered.filter(note => {
+            const status = (note.status || 'approved').toLowerCase();
+            return status === statusFilter;
+        });
+    }
+
+    if (dashboardNotesFilters.course) {
+        filtered = filtered.filter(note => (note.course || '') === dashboardNotesFilters.course);
+    }
+
+    if (dashboardNotesFilters.uploader) {
+        filtered = filtered.filter(note => getNoteUploaderDisplay(note) === dashboardNotesFilters.uploader);
+    }
+
+    if (dashboardNotesFilters.type) {
+        filtered = filtered.filter(note => (note.type || 'notes') === dashboardNotesFilters.type);
+    }
+
+    const search = (dashboardNotesFilters.search || '').trim().toLowerCase();
+    if (search) {
+        filtered = filtered.filter(note => {
+            const title = (note.title || '').toLowerCase();
+            const course = (note.course || '').toLowerCase();
+            const uploader = getNoteUploaderDisplay(note).toLowerCase();
+            return (
+                title.includes(search) ||
+                course.includes(search) ||
+                uploader.includes(search)
+            );
+        });
+    }
+
+    return filtered;
+}
+
+function renderDashboardStatsAndUploads() {
+    const filtered = getFilteredDashboardNotes();
+
+    // Update stats cards from filtered notes
+    const totalNotesEl = document.getElementById('total-notes');
+    const totalViewsEl = document.getElementById('total-views');
+    const totalDownloadsEl = document.getElementById('total-downloads');
+
+    if (totalNotesEl || totalViewsEl || totalDownloadsEl) {
+        const totalNotes = filtered.length;
+        const totalViews = filtered.reduce((sum, note) => sum + (parseInt(note.views, 10) || 0), 0);
+        const totalDownloads = filtered.reduce((sum, note) => sum + (parseInt(note.downloads, 10) || 0), 0);
+
+        if (totalNotesEl) totalNotesEl.textContent = totalNotes;
+        if (totalViewsEl) totalViewsEl.textContent = totalViews;
+        if (totalDownloadsEl) totalDownloadsEl.textContent = totalDownloads;
+    }
+
+    // Update recent uploads list (top 10 by created_at)
+    const container = document.getElementById('recent-uploads-container');
+    if (!container) return;
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-inbox"></i><br>No uploads match the current filters</div>';
+        return;
+    }
+
+    const sortedByDate = filtered.slice().sort((a, b) => {
+        const ad = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bd = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bd - ad;
+    });
+
+    const recentNotes = sortedByDate.slice(0, 10);
+
+    container.innerHTML = recentNotes.map(note => {
+        const date = note.created_at ? new Date(note.created_at) : null;
+        const formattedDate = date
+            ? date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '-';
+
+        return `
+        <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1fr;">
+            <div>
+                <strong>${note.title || 'Untitled'}</strong>
+                ${note.description ? `<br><small style="color: var(--text-secondary);">${note.description.substring(0, 50)}...</small>` : ''}
+            </div>
+            <div>${getNoteUploaderDisplay(note)}</div>
+            <div>${note.course || '-'}</div>
+            <div><span class="resource-type ${note.type || 'notes'}">${note.type || 'notes'}</span></div>
+            <div>${note.views || 0}</div>
+            <div>${note.downloads || 0}</div>
+            <div><small>${formattedDate}</small></div>
+        </div>
+        `;
+    }).join('');
 }
 
 async function loadNotes() {
@@ -205,18 +386,14 @@ async function loadStats() {
         }
         
         const notesArray = Array.isArray(notes) ? notes : [];
-        const totalViews = notesArray.reduce((sum, note) => sum + (parseInt(note.views) || 0), 0);
-        const totalDownloads = notesArray.reduce((sum, note) => sum + (parseInt(note.downloads) || 0), 0);
+
+        // Cache for dashboard filters + stats + recent uploads
+        dashboardNotesData = notesArray;
+        populateDashboardFilterOptions();
+        renderDashboardStatsAndUploads();
         
-        const totalNotesEl = document.getElementById('total-notes');
-        const totalViewsEl = document.getElementById('total-views');
-        const totalDownloadsEl = document.getElementById('total-downloads');
         const totalUsersEl = document.getElementById('total-users');
         const totalCommentsEl = document.getElementById('total-comments');
-        
-        if (totalNotesEl) totalNotesEl.textContent = notesArray.length;
-        if (totalViewsEl) totalViewsEl.textContent = totalViews;
-        if (totalDownloadsEl) totalDownloadsEl.textContent = totalDownloads;
         
         const usersResponse = await fetch('../../backend/api/admin/users.php');
         if (usersResponse.ok) {
@@ -249,7 +426,6 @@ async function loadStats() {
 }
 
 function refreshNotes() {
-    loadRecentUploads();
     loadStats();
 }
 
@@ -281,7 +457,6 @@ window.downloadNote = function(filePath, fileName) {
     }
     const url = `../../${cleanPath}`;
     console.log('Downloading file:', url); // Debug log
-    
     // Create download link
     const link = document.createElement('a');
     link.href = url;
