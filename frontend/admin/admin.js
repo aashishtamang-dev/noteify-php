@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadProfile();
     initializeProfile();
+    initializeNotesManagementControls();
 });
 
 // Navigation
@@ -431,69 +432,278 @@ function refreshUsers() {
 }
 
 // Notes Management Functions
+let notesManagementData = [];
+let notesManagementFilters = {
+    status: '',
+    course: '',
+    uploader: '',
+    search: '',
+    sortKey: 'date',
+    sortDir: 'desc'
+};
+
+function getNoteUploaderDisplay(note) {
+    return note.author_name
+        ? note.author_name
+        : (note.author_username
+            ? note.author_username
+            : (note.uploaded_by ? 'User #' + note.uploaded_by : 'Unknown'));
+}
+
+function initializeNotesManagementControls() {
+    const searchInput = document.getElementById('notes-search-input');
+    const statusSelect = document.getElementById('notes-filter-status');
+    const courseSelect = document.getElementById('notes-filter-course');
+    const uploaderSelect = document.getElementById('notes-filter-uploader');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            notesManagementFilters.search = e.target.value || '';
+            renderNotesManagementTable();
+        });
+    }
+
+    if (statusSelect) {
+        statusSelect.addEventListener('change', (e) => {
+            notesManagementFilters.status = e.target.value || '';
+            renderNotesManagementTable();
+        });
+    }
+
+    if (courseSelect) {
+        courseSelect.addEventListener('change', (e) => {
+            notesManagementFilters.course = e.target.value || '';
+            renderNotesManagementTable();
+        });
+    }
+
+    if (uploaderSelect) {
+        uploaderSelect.addEventListener('change', (e) => {
+            notesManagementFilters.uploader = e.target.value || '';
+            renderNotesManagementTable();
+        });
+    }
+
+    // Sort controls on header
+    document.querySelectorAll('[data-notes-sort]').forEach(header => {
+        header.addEventListener('click', () => {
+            const key = header.getAttribute('data-notes-sort');
+            if (!key) return;
+
+            if (notesManagementFilters.sortKey === key) {
+                notesManagementFilters.sortDir = notesManagementFilters.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                notesManagementFilters.sortKey = key;
+                // For review workflow, default to newest / highest first
+                notesManagementFilters.sortDir = key === 'date' ? 'desc' : 'desc';
+            }
+
+            renderNotesManagementTable();
+        });
+    });
+}
+
+function populateNotesFilterOptions() {
+    const courseSelect = document.getElementById('notes-filter-course');
+    const uploaderSelect = document.getElementById('notes-filter-uploader');
+
+    if (!Array.isArray(notesManagementData) || notesManagementData.length === 0) {
+        return;
+    }
+
+    if (courseSelect) {
+        const previous = courseSelect.value;
+        const courses = new Set();
+        notesManagementData.forEach(note => {
+            if (note.course) {
+                courses.add(note.course);
+            }
+        });
+
+        // Keep "All courses" option
+        courseSelect.innerHTML = '<option value="">All courses</option>' +
+            Array.from(courses).sort().map(course =>
+                `<option value="${course}">${course}</option>`
+            ).join('');
+
+        if (previous && Array.from(courses).includes(previous)) {
+            courseSelect.value = previous;
+        }
+    }
+
+    if (uploaderSelect) {
+        const previous = uploaderSelect.value;
+        const uploaders = new Set();
+        notesManagementData.forEach(note => {
+            const uploader = getNoteUploaderDisplay(note);
+            if (uploader) {
+                uploaders.add(uploader);
+            }
+        });
+
+        uploaderSelect.innerHTML = '<option value="">All uploaders</option>' +
+            Array.from(uploaders).sort().map(uploader =>
+                `<option value="${uploader}">${uploader}</option>`
+            ).join('');
+
+        if (previous && Array.from(uploaders).includes(previous)) {
+            uploaderSelect.value = previous;
+        }
+    }
+}
+
+function renderNotesManagementTable() {
+    const container = document.getElementById('notes-management-container');
+    if (!container) return;
+
+    if (!Array.isArray(notesManagementData) || notesManagementData.length === 0) {
+        container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-inbox"></i><br>No notes found</div>';
+        return;
+    }
+
+    let filtered = notesManagementData.slice();
+
+    // Apply status filter
+    if (notesManagementFilters.status) {
+        const statusFilter = notesManagementFilters.status;
+        filtered = filtered.filter(note => {
+            const status = (note.status || 'approved').toLowerCase();
+            return status === statusFilter;
+        });
+    }
+
+    // Apply course filter
+    if (notesManagementFilters.course) {
+        filtered = filtered.filter(note => (note.course || '') === notesManagementFilters.course);
+    }
+
+    // Apply uploader filter
+    if (notesManagementFilters.uploader) {
+        filtered = filtered.filter(note => getNoteUploaderDisplay(note) === notesManagementFilters.uploader);
+    }
+
+    // Apply search
+    const search = (notesManagementFilters.search || '').trim().toLowerCase();
+    if (search) {
+        filtered = filtered.filter(note => {
+            const title = (note.title || '').toLowerCase();
+            const description = (note.description || '').toLowerCase();
+            const course = (note.course || '').toLowerCase();
+            const uploader = getNoteUploaderDisplay(note).toLowerCase();
+            return (
+                title.includes(search) ||
+                description.includes(search) ||
+                course.includes(search) ||
+                uploader.includes(search)
+            );
+        });
+    }
+
+    // Apply sorting
+    const sortKey = notesManagementFilters.sortKey;
+    const sortDir = notesManagementFilters.sortDir === 'asc' ? 1 : -1;
+
+    filtered.sort((a, b) => {
+        if (sortKey === 'views') {
+            const av = parseInt(a.views, 10) || 0;
+            const bv = parseInt(b.views, 10) || 0;
+            return (av - bv) * sortDir;
+        }
+        if (sortKey === 'downloads') {
+            const av = parseInt(a.downloads, 10) || 0;
+            const bv = parseInt(b.downloads, 10) || 0;
+            return (av - bv) * sortDir;
+        }
+        if (sortKey === 'date') {
+            const ad = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const bd = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return (ad - bd) * sortDir;
+        }
+        return 0;
+    });
+
+    // Update sort icons
+    document.querySelectorAll('[data-notes-sort]').forEach(header => {
+        const key = header.getAttribute('data-notes-sort');
+        const icon = header.querySelector('.sort-icon');
+        if (!icon) return;
+
+        header.classList.toggle('active', key === sortKey);
+
+        icon.classList.remove('fa-sort', 'fa-sort-up', 'fa-sort-down');
+        if (key !== sortKey) {
+            icon.classList.add('fa-sort');
+        } else {
+            icon.classList.add(notesManagementFilters.sortDir === 'asc' ? 'fa-sort-up' : 'fa-sort-down');
+        }
+    });
+    container.innerHTML = filtered.map(note => {
+        const status = note.status || 'approved'; // Default to approved if no status field
+        const statusClass = status === 'approved' ? 'status-approved' : (status === 'rejected' ? 'status-rejected' : 'status-pending');
+        const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
+        // Build a safe file path (some rows may not have uploads/ prefix)
+        let filePath = null;
+        if (note.file_path) {
+            filePath = note.file_path.startsWith('uploads/')
+                ? note.file_path
+                : `uploads/${note.file_path}`;
+        }
+
+        const safeFilePath = filePath ? filePath.replace(/'/g, "\\'") : null;
+
+        const date = note.created_at ? new Date(note.created_at) : null;
+        const formattedDate = date
+            ? date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '-';
+
+        return `
+        <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1.2fr 1fr 1.5fr;">
+            <div>
+                <strong>${note.title || 'Untitled'}</strong>
+                ${note.description ? `<br><small style="color: var(--text-secondary);">${note.description.substring(0, 50)}...</small>` : ''}
+            </div>
+            <div>${getNoteUploaderDisplay(note)}</div>
+            <div>${note.course || '-'}</div>
+            <div><span class="resource-type ${note.type || 'notes'}">${note.type || 'notes'}</span></div>
+            <div>${note.views || 0}</div>
+            <div>${note.downloads || 0}</div>
+            <div><small>${formattedDate}</small></div>
+            <div><span class="status-badge ${statusClass}">${statusText}</span></div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; justify-content: flex-start;">
+                ${safeFilePath ? `
+                    <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" onclick="window.open('../../${safeFilePath}', '_blank')" title="View note">
+                        <i class="fa-regular fa-eye"></i> View
+                    </button>
+                ` : ''}
+                ${status !== 'approved' ? `
+                    <button class="btn-approve" onclick="approveNote(${note.note_id})" title="Approve Note">
+                        <i class="fa-solid fa-check"></i> Approve
+                    </button>
+                ` : ''}
+                ${status !== 'rejected' ? `
+                    <button class="btn-reject" onclick="rejectNote(${note.note_id})" title="Reject Note">
+                        <i class="fa-solid fa-times"></i> Reject
+                    </button>
+                ` : ''}
+                <button class="btn-delete" onclick="deleteNote(${note.note_id})" title="Delete Note">
+                    <i class="fa-solid fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
 async function loadNotesManagement() {
     try {
         const response = await fetch('../../backend/api/admin/notes.php');
         const notes = await response.json();
-        
-        const container = document.getElementById('notes-management-container');
-        if (!container) return;
-        
-        if (notes.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-inbox"></i><br>No notes found</div>';
-            return;
-        }
-        
-        container.innerHTML = notes.map(note => {
-            const status = note.status || 'approved'; // Default to approved if no status field
-            const statusClass = status === 'approved' ? 'status-approved' : (status === 'rejected' ? 'status-rejected' : 'status-pending');
-            const statusText = status.charAt(0).toUpperCase() + status.slice(1);
 
-            // Build a safe file path (some rows may not have uploads/ prefix)
-            let filePath = null;
-            if (note.file_path) {
-                filePath = note.file_path.startsWith('uploads/')
-                    ? note.file_path
-                    : `uploads/${note.file_path}`;
-            }
+        notesManagementData = Array.isArray(notes) ? notes : [];
 
-            const safeFilePath = filePath ? filePath.replace(/'/g, "\\'") : null;
-
-            return `
-            <div class="table-row" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1fr 1.5fr;">
-                <div>
-                    <strong>${note.title || 'Untitled'}</strong>
-                    ${note.description ? `<br><small style="color: var(--text-secondary);">${note.description.substring(0, 50)}...</small>` : ''}
-                </div>
-                <div>${note.author_name || 'Unknown'}</div>
-                <div>${note.course || '-'}</div>
-                <div><span class="resource-type ${note.type || 'notes'}">${note.type || 'notes'}</span></div>
-                <div>${note.views || 0}</div>
-                <div>${note.downloads || 0}</div>
-                <div><span class="status-badge ${statusClass}">${statusText}</span></div>
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; justify-content: flex-start;">
-                    ${safeFilePath ? `
-                        <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" onclick="window.open('../../${safeFilePath}', '_blank')" title="View note">
-                            <i class="fa-regular fa-eye"></i> View
-                        </button>
-                    ` : ''}
-                    ${status !== 'approved' ? `
-                        <button class="btn-approve" onclick="approveNote(${note.note_id})" title="Approve Note">
-                            <i class="fa-solid fa-check"></i> Approve
-                        </button>
-                    ` : ''}
-                    ${status !== 'rejected' ? `
-                        <button class="btn-reject" onclick="rejectNote(${note.note_id})" title="Reject Note">
-                            <i class="fa-solid fa-times"></i> Reject
-                        </button>
-                    ` : ''}
-                    <button class="btn-delete" onclick="deleteNote(${note.note_id})" title="Delete Note">
-                        <i class="fa-solid fa-trash"></i> Delete
-                    </button>
-                </div>
-            </div>
-            `;
-        }).join('');
+        populateNotesFilterOptions();
+        renderNotesManagementTable();
     } catch (error) {
         console.error('Error loading notes management:', error);
         const container = document.getElementById('notes-management-container');

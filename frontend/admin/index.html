@@ -177,6 +177,42 @@
         .page.active {
             display: block;
         }
+        .notes-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .notes-filters-left {
+            flex: 1 1 220px;
+            min-width: 180px;
+        }
+        .notes-filters-right {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+        .notes-filters .form-input,
+        .notes-filters select {
+            min-width: 160px;
+        }
+        .sortable-header {
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            user-select: none;
+        }
+        .sort-icon {
+            font-size: 0.75rem;
+            color: var(--text-secondary, #9ca3af);
+        }
+        .sortable-header.active .sort-icon {
+            color: var(--primary-purple, #a855f7);
+        }
     </style>
 </head>
 <body>
@@ -303,14 +339,55 @@
                     </button>
                 </div>
 
+                <div class="notes-filters">
+                    <div class="notes-filters-left">
+                        <input
+                            type="search"
+                            id="notes-search-input"
+                            class="form-input"
+                            placeholder="Search by title, description, course, or uploader..."
+                        >
+                    </div>
+                    <div class="notes-filters-right">
+                        <select id="notes-filter-status" class="form-input">
+                            <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <select id="notes-filter-course" class="form-input">
+                            <option value="">All courses</option>
+                        </select>
+                        <select id="notes-filter-uploader" class="form-input">
+                            <option value="">All uploaders</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="notes-table">
-                    <div class="table-header" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1fr 1.5fr;">
+                    <div class="table-header" style="grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.8fr 1.2fr 1fr 1.5fr;">
                         <div>Title</div>
                         <div>Author</div>
                         <div>Course</div>
                         <div>Type</div>
-                        <div>Views</div>
-                        <div>Downloads</div>
+                        <div>
+                            <span class="sortable-header" data-notes-sort="views">
+                                <span>Views</span>
+                                <i class="fa-solid fa-sort sort-icon"></i>
+                            </span>
+                        </div>
+                        <div>
+                            <span class="sortable-header" data-notes-sort="downloads">
+                                <span>Downloads</span>
+                                <i class="fa-solid fa-sort sort-icon"></i>
+                            </span>
+                        </div>
+                        <div>
+                            <span class="sortable-header" data-notes-sort="date">
+                                <span>Date</span>
+                                <i class="fa-solid fa-sort sort-icon"></i>
+                            </span>
+                        </div>
                         <div>Status</div>
                         <div>Actions</div>
                     </div>
